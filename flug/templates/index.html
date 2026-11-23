@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% block title %}Übersicht{% endblock %}
+{% block content %}
+<h1>Überwachte Routen</h1>
+<div class="card table-wrap">
+<table>
+  <thead><tr>
+    <th>Route</th><th>Von → Nach</th><th class="num">Aktuell günstigst</th><th class="num">Tiefstwert</th>
+    <th class="num">Zielpreis</th><th>Letzter Lauf</th>
+  </tr></thead>
+  <tbody>
+  {% for r in rows %}
+    {% set w = r.watch %}
+    <tr>
+      <td><a href="/watch/{{ w.id }}">{{ w.name }}</a>{% if not w.active %} <span class="badge">inaktiv</span>{% endif %}</td>
+      <td class="small">{{ w.config.origins|join(", ") }} → {{ w.config.destinations|join(", ") }}</td>
+      <td class="num">
+        {% if r.current %}
+          <span class="{% if w.target_price is not none and r.current.total_amount <= w.target_price %}below{% endif %}">{{ r.current.total_amount|money(r.current.currency) }}</span>
+          <div class="small muted">{{ r.current.origin }}→{{ r.current.destination }} · {{ r.current.departure_date.strftime("%d.%m.") }}{% if r.current.return_date %}–{{ r.current.return_date.strftime("%d.%m.") }}{% endif %}</div>
+        {% else %}<span class="muted">–</span>{% endif %}
+      </td>
+      <td class="num">{{ r.all_time|money(w.currency) }}</td>
+      <td class="num">{{ w.target_price|money(w.currency) }}</td>
+      <td class="small">
+        {% if r.last_run %}<span class="badge {{ r.last_run.status }}">{{ r.last_run.status }}</span>
+        {{ r.last_run.started_at.strftime("%d.%m. %H:%M") }} UTC{% else %}<span class="muted">noch nie</span>{% endif %}
+      </td>
+    </tr>
+  {% else %}
+    <tr><td colspan="6" class="muted">Keine Routen. Lege sie in <code>watches.yaml</code> an.</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+
+<div class="grid">
+  <div class="card stat"><div class="l">Suchintervall</div><div class="v">{{ settings.search_interval_minutes }} min</div></div>
+  <div class="card stat"><div class="l">Anbieter</div><div class="v">{{ settings.provider_names|join(", ") }}</div></div>
+  {% for u in usage %}
+  <div class="card stat"><div class="l">{{ u.provider }}-Suchen {{ month }}</div><div class="v">{{ u.searches }}</div></div>
+  {% endfor %}
+  <div class="card stat"><div class="l">Telegram</div><div class="v">{{ "aktiv" if settings.telegram_enabled else "aus" }}</div></div>
+</div>
+
+<div class="card table-wrap">
+<h2>Letzte Alarme</h2>
+<table>
+  <thead><tr><th>Zeit (UTC)</th><th class="num">Preis</th><th>Grund</th><th>Zugestellt</th></tr></thead>
+  <tbody>
+  {% for a in alerts %}
+    <tr><td>{{ a.sent_at.strftime("%d.%m. %H:%M") }}</td><td class="num">{{ a.total_amount|money(a.currency) }}</td>
+      <td>{{ a.reasons|join(", ") }}</td><td>{{ "ja" if a.delivered else "nein" }}</td></tr>
+  {% else %}<tr><td colspan="4" class="muted">Noch keine Alarme.</td></tr>{% endfor %}
+  </tbody>
+</table>
+</div>
+{% endblock %}

@@ -1,0 +1,32 @@
+# Copy to watches.yaml and adjust. Codes are IATA airport (FRA) or city codes (BER, LON, PAR).
+# Look codes up with:  flug places "Düsseldorf"
+#
+# Search volume per round = origins x destinations x date pairs (x providers).
+# Check it with:  flug check-config
+watches:
+  - name: Lissabon im Frühling
+    origins: [FRA, DUS, CGN]          # all departure airports are searched and compared
+    destinations: [LIS]
+    departure: {from: 2027-04-10, to: 2027-04-12}   # flexible departure window
+    stay_nights: {min: 6, max: 7}     # flexible return = departure + 6..7 nights
+    target_price: 180                 # total price for all passengers, in `currency`
+    currency: EUR
+    adults: 1
+    cabin_class: economy              # economy | premium_economy | business | first
+    max_connections: 1                # 0 = nonstop only; omit for any
+    max_date_combinations: 6          # hard cap on (departure, return) pairs per round
+
+  - name: New York Sommer
+    origins: [MUC, FRA]
+    destinations: [NYC]               # city code = all NYC airports
+    departure: [2027-07-01, 2027-07-03]
+    return: {from: 2027-07-15, to: 2027-07-16}
+    target_price: 550
+    currency: EUR
+
+  - name: One-way Barcelona
+    origins: [BER]
+    destinations: [BCN, GRO]
+    departure: {from: 2027-05-01, to: 2027-05-02}  # no return/stay_nights = one way
+    target_price: 60
+    active: true

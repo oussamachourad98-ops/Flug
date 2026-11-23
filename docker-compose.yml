@@ -1,0 +1,15 @@
+services:
+  flug:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DATABASE_URL: sqlite:////app/data/flug.db
+      WATCHES_FILE: /app/watches.yaml
+    volumes:
+      - ./data:/app/data
+      - ./watches.yaml:/app/watches.yaml:ro
+    # Only reachable from the VPS itself; put Caddy/nginx with HTTPS in front
+    # or use an SSH tunnel:  ssh -L 8000:127.0.0.1:8000 user@vps
+    ports:
+      - "127.0.0.1:8000:8000"

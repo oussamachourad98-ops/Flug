@@ -1,0 +1,127 @@
+{% extends "base.html" %}
+{% block title %}{{ w.name }}{% endblock %}
+{% block content %}
+<h1>{{ w.name }}</h1>
+<p class="muted small">{{ w.config.origins|join(", ") }} → {{ w.config.destinations|join(", ") }} ·
+  {{ w.config.adults }} Erw. · {{ w.config.cabin_class }}{% if w.config.max_connections is not none %} · max. {{ w.config.max_connections }} Umstieg(e){% endif %}</p>
+
+<div class="card">
+  <form class="inline" method="post" action="/watch/{{ w.id }}/target">
+    <label for="tp">Zielpreis ({{ w.currency }})</label>
+    <input id="tp" type="text" name="target_price" inputmode="decimal" value="{{ w.target_price if w.target_price is not none else '' }}" placeholder="z. B. 199">
+    <button type="submit">Speichern</button>
+    <span class="small muted">Leer = kein Zielpreis. Eine Änderung in watches.yaml überschreibt diesen Wert.</span>
+  </form>
+</div>
+
+<div class="card">
+  <h2>Preisverlauf – günstigster Preis je Abflughafen</h2>
+  <div class="legend" id="legend"></div>
+  <div class="chart-box"><canvas id="chart" aria-label="Preisverlauf" role="img"></canvas></div>
+  <p class="small muted" id="chart-empty" hidden>Noch keine Daten – der erste Lauf füllt den Verlauf.</p>
+</div>
+
+<div class="card table-wrap">
+  <h2>Vergleich je Abflughafen (letzter Lauf)</h2>
+  <table>
+    <thead><tr><th>Ab</th><th>Nach</th><th>Datum</th><th class="num">Gesamtpreis</th><th>Airline</th><th class="num">Stopps</th><th class="num">Dauer</th><th>Gepäck</th><th>Link</th></tr></thead>
+    <tbody>
+    {% for o in per_origin %}
+      <tr>
+        <td><b>{{ o.origin }}</b></td><td>{{ o.destination }}</td>
+        <td>{{ o.departure_date.strftime("%d.%m.%Y") }}{% if o.return_date %} – {{ o.return_date.strftime("%d.%m.%Y") }}{% endif %}</td>
+        <td class="num {% if w.target_price is not none and o.total_amount <= w.target_price %}below{% endif %}">{{ o.total_amount|money(o.currency) }}</td>
+        <td>{{ o.airlines }}</td><td class="num">{{ o.stops }}</td><td class="num">{{ o.duration_minutes|duration }}</td>
+        <td class="small">{{ o.baggage|baggage }}</td>
+        <td>{% if o.booking_url %}<a href="{{ o.booking_url }}" target="_blank" rel="noopener noreferrer">{{ "Buchen" if o.booking_url_kind == "offer" else "Suche öffnen" }}</a>{% endif %}</td>
+      </tr>
+    {% else %}<tr><td colspan="9" class="muted">Keine Angebote im letzten Lauf.</td></tr>{% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<div class="card table-wrap">
+  <h2>Günstigste Angebote (letzter Lauf{% if last_run %}, {{ last_run.started_at.strftime("%d.%m. %H:%M") }} UTC{% endif %})</h2>
+  <table>
+    <thead><tr><th class="num">Preis</th><th>Strecke</th><th>Datum</th><th>Flüge</th><th class="num">Dauer</th><th>Gepäck</th><th>Quelle</th><th>Gültig bis</th><th></th></tr></thead>
+    <tbody>
+    {% for o in offers %}
+      <tr>
+        <td class="num">{{ o.total_amount|money(o.currency) }}</td>
+        <td>{{ o.origin }}→{{ o.destination }}</td>
+        <td>{{ o.departure_date.strftime("%d.%m.") }}{% if o.return_date %}–{{ o.return_date.strftime("%d.%m.") }}{% endif %}</td>
+        <td class="small">{% for s in o.segments %}{{ s.carrier_code or "" }}{{ s.flight_number or "" }} {{ s.origin }}→{{ s.destination }} {{ s.departing_at[:16]|replace("T", " ") }}<br>{% endfor %}</td>
+        <td class="num">{{ o.duration_minutes|duration }}</td>
+        <td class="small">{{ o.baggage|baggage }}</td>
+        <td class="small">{{ o.provider }}</td>
+        <td class="small">{{ o.expires_at.strftime("%d.%m. %H:%M") if o.expires_at else "–" }}</td>
+        <td>{% if o.booking_url %}<a href="{{ o.booking_url }}" target="_blank" rel="noopener noreferrer">Link</a>{% endif %}</td>
+      </tr>
+    {% else %}<tr><td colspan="9" class="muted">–</td></tr>{% endfor %}
+    </tbody>
+  </table>
+  <p class="small muted">„Suche öffnen“ führt zu einer Google-Flights-Suche mit denselben Flughäfen/Daten – der Preis dort kann abweichen. Duffel-Angebote sind über die Duffel-API selbst buchbar.</p>
+</div>
+
+<div class="card table-wrap">
+  <h2>Letzte Läufe</h2>
+  <table>
+    <thead><tr><th>Start (UTC)</th><th>Status</th><th class="num">Suchen</th><th class="num">Angebote</th><th>Fehler</th></tr></thead>
+    <tbody>
+    {% for r in runs %}
+      <tr><td>{{ r.started_at.strftime("%d.%m. %H:%M") }}</td><td><span class="badge {{ r.status }}">{{ r.status }}</span></td>
+        <td class="num">{{ r.searches }}</td><td class="num">{{ r.offers_found }}</td>
+        <td class="small">{{ (r.errors or [])[:3]|join(" · ") }}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<script src="/static/chart.umd.min.js"></script>
+<script>
+(async () => {
+  const css = getComputedStyle(document.documentElement);
+  const v = n => css.getPropertyValue(n).trim();
+  const res = await fetch("/api/watch/{{ w.id }}/history?days=60", { credentials: "same-origin" });
+  const data = await res.json();
+  const fmt = new Intl.NumberFormat("de-DE", { style: "currency", currency: data.currency });
+  const dfmt = new Intl.DateTimeFormat("de-DE", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
+  // Colour follows the airport's position in the watch config, never its rank.
+  const origins = data.origins.filter(o => data.series[o]);
+  if (!origins.length) { document.getElementById("chart-empty").hidden = false; return; }
+  const legend = document.getElementById("legend");
+  const datasets = origins.map(o => {
+    const i = data.origins.indexOf(o) % 8;
+    const color = v(`--series-${i + 1}`);
+    legend.insertAdjacentHTML("beforeend", `<span><i style="background:${color}"></i>${o}</span>`);
+    return { label: o, data: data.series[o].map(p => ({ x: Date.parse(p.t), y: p.price })),
+             borderColor: color, backgroundColor: color, borderWidth: 2, pointRadius: 0,
+             pointHoverRadius: 5, pointHoverBorderWidth: 2, pointHoverBorderColor: v("--surface"), tension: 0 };
+  });
+  const xs = datasets.flatMap(d => d.data.map(p => p.x));
+  const xMin = Math.min(...xs), xMax = Math.max(...xs);
+  if (data.target !== null) {
+    datasets.push({ label: "Zielpreis", data: [{ x: xMin, y: data.target }, { x: xMax, y: data.target }],
+      borderColor: v("--text-2"), borderDash: [4, 3], borderWidth: 1.5, pointRadius: 0, pointHoverRadius: 0 });
+    legend.insertAdjacentHTML("beforeend", `<span><i class="dash"></i>Zielpreis</span>`);
+  }
+  new Chart(document.getElementById("chart"), {
+    type: "line",
+    data: { datasets },
+    options: {
+      maintainAspectRatio: false, animation: false,
+      interaction: { mode: "nearest", axis: "x", intersect: false },
+      plugins: { legend: { display: false },
+        tooltip: { filter: i => i.dataset.label !== "Zielpreis",
+          callbacks: { title: it => dfmt.format(it[0].parsed.x) + " UTC", label: c => ` ${c.dataset.label}: ${fmt.format(c.parsed.y)}` } } },
+      scales: {
+        x: { type: "linear", min: xMin, max: xMax, grid: { color: v("--grid") }, border: { display: false },
+             ticks: { color: v("--muted"), maxTicksLimit: 6, callback: x => dfmt.format(x) } },
+        y: { grid: { color: v("--grid") }, border: { display: false },
+             ticks: { color: v("--muted"), callback: y => fmt.format(y) } }
+      }
+    }
+  });
+})();
+</script>
+{% endblock %}
